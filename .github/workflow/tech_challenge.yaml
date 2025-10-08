@@ -1,0 +1,112 @@
+name: Infra + ETL
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "What to run"
+        type: choice
+        options: [terraform, python, both]
+        default: python
+        required: true
+      terraform_action:
+        description: "Terraform action"
+        type: choice
+        options: [plan, apply, destroy]
+        default: plan
+        required: true
+      overwrite:
+        description: "Force rebuild of silver/gold (Python)"
+        type: boolean
+        default: false
+        required: true
+
+jobs:
+  terraform:
+    if: ${{ inputs.target == 'terraform' || inputs.target == 'both' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      # AWS creds from repo/org secrets
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN:     ${{ secrets.AWS_SESSION_TOKEN }} # optional
+      AWS_REGION:            ${{ secrets.AWS_REGION || 'sa-east-1' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        if: ${{ inputs.terraform_action == 'plan' }}
+        run: terraform plan -input=false
+
+      - name: Terraform Apply
+        if: ${{ inputs.terraform_action == 'apply' }}
+        run: terraform apply -input=false -auto-approve
+
+      - name: Terraform Destroy
+        if: ${{ inputs.terraform_action == 'destroy' }}
+        run: terraform destroy -input=false -auto-approve
+
+  python:
+    if: ${{ inputs.target == 'python' || inputs.target == 'both' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    env:
+      # --- AWS (from secrets) ---
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION:            ${{ secrets.AWS_REGION || 'sa-east-1' }}
+
+      # --- PostgreSQL (PNAD) ---
+      POSTGRES_USER_PNAD:     ${{ secrets.POSTGRES_USER_PNAD || 'postgres' }}
+      POSTGRES_PASSWORD_PNAD: ${{ secrets.POSTGRES_PASSWORD_PNAD }}
+      POSTGRES_HOST_PNAD:     ${{ secrets.POSTGRES_HOST_PNAD || 'postgres-tc.clieswmc6fw2.sa-east-1.rds.amazonaws.com' }}
+      POSTGRES_PORT_PNAD:     ${{ secrets.POSTGRES_PORT_PNAD || '5432' }}
+      POSTGRES_DB_PNAD:       ${{ secrets.POSTGRES_DB_PNAD || 'pnad_covid' }}
+
+      # --- Pipeline behavior ---
+      OVERWRITE:              ${{ inputs.overwrite }}  # "true" or "false"
+      # S3_BUCKET is optional if your config.py has a default; set it if you want to override:
+      S3_BUCKET:              ${{ secrets.S3_BUCKET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('python/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -U pip
+          pip install -r requirements.txt
+
+      - name: Run ETL (main.py)
+        run: |
+          source .venv/bin/activate
+          python main.py
+
