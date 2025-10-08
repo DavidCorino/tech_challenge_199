@@ -1,6 +1,6 @@
 # Tech Challenge — Terraform + Python ETL (PNAD COVID)
 
-![Arquitetura do projeto](images/architecture.png)
+![Arquitetura do projeto](images/Arquitetura.png)
 
 End-to-end pipeline:
 
