@@ -1,5 +1,7 @@
 # Tech Challenge — Terraform + Python ETL (PNAD COVID)
 
+![Arquitetura do projeto](images/architecture.png)
+
 End-to-end pipeline:
 
 **GitHub (PNAD data)** → **S3 (bronze/silver/gold)** → **PostgreSQL (RDS)** → **Power BI**
