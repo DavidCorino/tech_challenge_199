@@ -22,40 +22,32 @@ on:
         required: true
 
 jobs:
-  terraform:
-    if: ${{ inputs.target == 'terraform' || inputs.target == 'both' }}
+  sanity-aws-sts:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: terraform
-    env:
-      # AWS creds from repo/org secrets
-      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION:            ${{ secrets.AWS_REGION || 'sa-east-1' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.8.5
+      - name: Show whether secrets are set (length only)
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN:     ${{ secrets.AWS_SESSION_TOKEN }}  # may be unset
+          AWS_REGION:            ${{ secrets.AWS_REGION || 'sa-east-1' }}
+        run: |
+          echo "Region: ${AWS_REGION:-unset}"
+          echo -n "AKID length: "; printf "%s" "$AWS_ACCESS_KEY_ID" | wc -c
+          echo -n "SECRET length: "; printf "%s" "$AWS_SECRET_ACCESS_KEY" | wc -c
+          echo -n "SESSION length: "; printf "%s" "$AWS_SESSION_TOKEN" | wc -c
 
-      - name: Terraform Init
-        run: terraform init -input=false
-
-      - name: Terraform Plan
-        if: ${{ inputs.terraform_action == 'plan' }}
-        run: terraform plan -input=false
-
-      - name: Terraform Apply
-        if: ${{ inputs.terraform_action == 'apply' }}
-        run: terraform apply -input=false -auto-approve
-
-      - name: Terraform Destroy
-        if: ${{ inputs.terraform_action == 'destroy' }}
-        run: terraform destroy -input=false -auto-approve
+      - name: AWS STS caller identity
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION:            ${{ secrets.AWS_REGION || 'sa-east-1' }}
+          # IMPORTANT: do NOT set AWS_SESSION_TOKEN unless you actually have temp creds
+        run: |
+          pipx install awscli || pip install awscli --quiet
+          aws sts get-caller-identity
 
   python:
     if: ${{ inputs.target == 'python' || inputs.target == 'both' }}
